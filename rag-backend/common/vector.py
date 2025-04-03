@@ -5,6 +5,7 @@ import psycopg2
 from psycopg2.extras import Json, execute_values
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+import numpy as np
 
 from common.logging import get_logger
 
@@ -161,4 +162,34 @@ def batch_insert_embeddings(
             [(id, chunk_id, model_id, f"{vector}::vector", "NOW()") for id, chunk_id, model_id, vector in rows],
         )
     
-    db.commit() 
+    db.commit()
+
+
+def cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
+    """Calculate cosine similarity between two vectors.
+    
+    Args:
+        vec1: First vector
+        vec2: Second vector
+        
+    Returns:
+        Cosine similarity value between -1 and 1
+    
+    Raises:
+        ValueError: If vectors have different dimensions or are zero vectors
+    """
+    if len(vec1) != len(vec2):
+        raise ValueError(f"Vectors must have same dimensions: {len(vec1)} != {len(vec2)}")
+    
+    # Convert to numpy arrays for efficiency
+    v1 = np.array(vec1)
+    v2 = np.array(vec2)
+    
+    # Check for zero vectors
+    norm1 = np.linalg.norm(v1)
+    norm2 = np.linalg.norm(v2)
+    if norm1 == 0 or norm2 == 0:
+        raise ValueError("Cosine similarity is undefined for zero vectors")
+    
+    # Calculate cosine similarity
+    return float(np.dot(v1, v2) / (norm1 * norm2)) 

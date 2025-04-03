@@ -3,7 +3,7 @@ from unittest.mock import patch, MagicMock
 
 # assuming this is the structure, update imports if needed
 from query_service.service import process_query
-from query_service.strategies import vector_search, knowledge_graph_search, hybrid_search
+from query_service.strategies import VectorSearchStrategy, KnowledgeGraphStrategy, HybridStrategy
 from query_service.query_enhancement import enhance_query
 
 
@@ -64,7 +64,7 @@ class TestQueryService(unittest.TestCase):
         mock_search_vectors.return_value = mock_chunks
         
         # act
-        result = vector_search(query, document_ids, parameters)
+        result = VectorSearchStrategy(query, document_ids, parameters).retrieve()
         
         # assert
         mock_search_vectors.assert_called_once_with(query, document_ids, parameters.get("model"),

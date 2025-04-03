@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import patch, MagicMock
 
 # assuming this is the structure, update imports if needed
-from evaluation_service.service import calculate_metrics, run_benchmark
+from evaluation_service.service import EvaluationService
 from evaluation_service.metrics import calculate_relevance, calculate_truthfulness, calculate_completeness
 
 
@@ -28,7 +28,7 @@ class TestEvaluationService(unittest.TestCase):
         mock_count_tokens.return_value = {"context": 25, "response": 18}
         
         # act
-        result = calculate_metrics(query, context, response)
+        result = EvaluationService.calculate_metrics(query, context, response)
         
         # assert
         mock_calc_relevance.assert_called_once_with(query, context, response)
@@ -95,7 +95,7 @@ class TestEvaluationService(unittest.TestCase):
         mock_process_query.side_effect = mock_results
         
         # act
-        result = run_benchmark(document_ids, strategy_name, parameters)
+        result = EvaluationService.run_benchmark(document_ids, strategy_name, parameters)
         
         # assert
         mock_get_questions.assert_called_once()
@@ -104,4 +104,28 @@ class TestEvaluationService(unittest.TestCase):
         
         self.assertEqual(result["total_questions"], 2)
         self.assertEqual(result["avg_relevance"], 0.935)  # (0.95 + 0.92) / 2
+        self.assertEqual(result["avg_completeness"], 0.89)  # (0.9 + 0.88) / 2
+
+    @patch('evaluation_service.service.calculate_relevance')
+    @patch('evaluation_service.service.calculate_truthfulness')
+    @patch('evaluation_service.service.calculate_completeness')
+    @patch('evaluation_service.service.get_latency')
+    @patch('evaluation_service.service.count_tokens')
+    @patch('evaluation_service.service.calculate_overall_score')
+    async def test_calculate_metrics_happy_path(self, mock_count_tokens, mock_get_latency,
+                                               mock_calculate_relevance, mock_calculate_truthfulness,
+                                               mock_calculate_completeness, mock_calculate_overall_score):
+        # Create an instance of EvaluationService
+        evaluation_service = EvaluationService(db=None)  # Pass a mock or actual db session as needed
+
+        # arrange
+        query = "What is RAG?"
+        context = ["RAG is Retrieval Augmented Generation", 
+                  "RAG combines retrieval with generation"]
+        response = "RAG (Retrieval Augmented Generation) is a technique that combines retrieval of external knowledge with text generation."
+        
+        mock_calculate_relevance.return_value = 0.95
+        mock_calculate_truthfulness.return_value = 0.98
+        mock_calculate_completeness.return_value = 0.92
+        mock_get_latency.return_value = 150
         self.assertEqual(result["avg_completeness"], 0.89)  # (0.9 + 0.88) / 2 

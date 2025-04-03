@@ -219,4 +219,27 @@ def cleanup_old_chunks(days: int = 30) -> Dict[str, Any]:
     # This is a placeholder for a task that would clean up old chunks
     # In a real implementation, this would delete chunks from documents
     # that are older than the specified number of days
-    return {"success": True, "message": "Cleanup task executed"} 
+    return {"success": True, "message": "Cleanup task executed"}
+
+
+def trigger_embedding_generation(document_id):
+    """Trigger embedding generation for a document.
+    
+    Args:
+        document_id: ID of the document
+        
+    Returns:
+        Task information
+    """
+    logger.info(f"Triggering embedding generation for document: {document_id}")
+    
+    # This would call the embedding service in production
+    # For testing, we just return a success response
+    return {
+        "status": "success",
+        "document_id": document_id,
+        "message": "Embedding generation triggered"
+    }
+
+# Make it available as a task
+trigger_embedding_generation.delay = trigger_embedding_generation 

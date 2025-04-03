@@ -1,136 +1,136 @@
-import uuid
-from datetime import datetime
-from typing import Optional, Dict, Any, List
+"""SQLAlchemy models for the RAG benchmark platform."""
 
-from sqlalchemy import Column, String, Text, Integer, Float, ForeignKey, Boolean, DateTime
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from datetime import datetime
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Float, JSON
 from sqlalchemy.orm import relationship
+from enum import Enum
 
 from common.database import Base
 
 
 class Document(Base):
-    """Document model for storing original documents."""
+    """Document model for source documents uploaded by users."""
+    
     __tablename__ = "documents"
-
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    title = Column(Text, nullable=False)
-    source = Column(Text, nullable=False)
-    content = Column(Text, nullable=False)
-    metadata = Column(JSONB, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
-
+    
+    id = Column(String, primary_key=True, index=True)
+    name = Column(String, index=True)
+    description = Column(Text, nullable=True)
+    file_path = Column(String)
+    file_type = Column(String)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    user_id = Column(String, index=True)
+    status = Column(String, default="uploaded")
+    document_meta = Column(JSON, nullable=True)  # Renamed from metadata to avoid conflicts
+    
     # Relationships
-    chunks = relationship("Chunk", back_populates="document", cascade="all, delete-orphan")
-    processing_statuses = relationship("ProcessingStatus", back_populates="document", cascade="all, delete-orphan")
-    graphs = relationship("GraphMetadata", back_populates="corpus", cascade="all, delete-orphan")
+    chunks = relationship("Chunk", back_populates="document")
 
 
 class Chunk(Base):
-    """Chunk model for storing document segments."""
+    """Chunk model for segments of documents used for retrieval."""
+    
     __tablename__ = "chunks"
-
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    document_id = Column(UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
-    content = Column(Text, nullable=False)
-    metadata = Column(JSONB, nullable=True)
-    chunk_index = Column(Integer, nullable=False)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-
+    
+    id = Column(String, primary_key=True, index=True)
+    document_id = Column(String, ForeignKey("documents.id"))
+    content = Column(Text)
+    position = Column(Integer)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
     # Relationships
     document = relationship("Document", back_populates="chunks")
-    embeddings = relationship("Embedding", back_populates="chunk", cascade="all, delete-orphan")
-
-
-class ProcessingStatus(Base):
-    """Processing status model to track document processing stages."""
-    __tablename__ = "processing_status"
-
-    document_id = Column(UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"), primary_key=True)
-    process_type = Column(String, primary_key=True)
-    status = Column(String, nullable=False)
-    error_message = Column(Text, nullable=True)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-    # Relationships
-    document = relationship("Document", back_populates="processing_statuses")
+    embeddings = relationship("Embedding", back_populates="chunk")
+    entities = relationship("Entity", back_populates="chunk")
 
 
 class Embedding(Base):
-    """Embedding model for storing vector embeddings."""
+    """Embedding model for vector representations of chunks."""
+    
     __tablename__ = "embeddings"
-
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    chunk_id = Column(UUID(as_uuid=True), ForeignKey("chunks.id", ondelete="CASCADE"), nullable=False)
-    model_id = Column(String, nullable=False)
-    # The embedding field is handled specially for pgvector
-    # SQLAlchemy doesn't directly support the vector type
-    # This will be managed in the repository layer
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-
+    
+    id = Column(String, primary_key=True, index=True)
+    chunk_id = Column(String, ForeignKey("chunks.id"))
+    model_name = Column(String, index=True)
+    vector = Column(Text)  # Stored as JSON string
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
     # Relationships
     chunk = relationship("Chunk", back_populates="embeddings")
 
 
-class QueryLog(Base):
-    """Query log model for storing user queries."""
-    __tablename__ = "query_logs"
-
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    query = Column(Text, nullable=False)
-    enhanced_query = Column(Text, nullable=True)
-    rag_strategy = Column(String, nullable=False)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-
+class Entity(Base):
+    """Entity model for entities extracted from chunks."""
+    
+    __tablename__ = "entities"
+    
+    id = Column(String, primary_key=True, index=True)
+    text = Column(String, index=True)
+    type = Column(String, index=True)
+    chunk_id = Column(String, ForeignKey("chunks.id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
     # Relationships
-    metrics = relationship("ResponseMetric", back_populates="query", cascade="all, delete-orphan")
+    chunk = relationship("Chunk", back_populates="entities")
 
 
-class ResponseMetric(Base):
-    """Response metrics model for storing evaluation metrics."""
-    __tablename__ = "response_metrics"
+class Query(Base):
+    """Query model for user queries."""
+    
+    __tablename__ = "queries"
+    
+    id = Column(String, primary_key=True, index=True)
+    text = Column(Text)
+    enhanced_text = Column(Text, nullable=True)
+    user_id = Column(String, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    strategy = Column(String)
+    parameters = Column(JSON, nullable=True)
+    
+    # Relationships
+    responses = relationship("Response", back_populates="query")
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    query_id = Column(UUID(as_uuid=True), ForeignKey("query_logs.id", ondelete="CASCADE"), nullable=False)
-    response = Column(Text, nullable=False)
+
+class Response(Base):
+    """Response model for RAG responses."""
+    
+    __tablename__ = "responses"
+    
+    id = Column(String, primary_key=True, index=True)
+    query_id = Column(String, ForeignKey("queries.id"))
+    content = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    context = Column(JSON)  # List of chunk IDs used in context
+    
+    # Metrics
     relevance_score = Column(Float, nullable=True)
     truthfulness_score = Column(Float, nullable=True)
     completeness_score = Column(Float, nullable=True)
-    latency_ms = Column(Integer, nullable=False)
-    token_count = Column(Integer, nullable=False)
-    estimated_cost = Column(Float, nullable=False)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-
+    latency_ms = Column(Integer, nullable=True)
+    token_count = Column(Integer, nullable=True)
+    estimated_cost = Column(Float, nullable=True)
+    
     # Relationships
-    query = relationship("QueryLog", back_populates="metrics")
+    query = relationship("Query", back_populates="responses")
 
 
 class ApiKey(Base):
     """API key model for authentication."""
+    
     __tablename__ = "api_keys"
+    
+    id = Column(String, primary_key=True, index=True)
+    key = Column(String, index=True, unique=True)
+    name = Column(String)
+    user_id = Column(String, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_used_at = Column(DateTime, nullable=True)
+    is_active = Column(Integer, default=1)  # Using Integer for SQLite compatibility 
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    key = Column(String, nullable=False, unique=True)
-    name = Column(String, nullable=False)
-    enabled = Column(Boolean, nullable=False, default=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
-
-class GraphMetadata(Base):
-    """Graph metadata model for tracking knowledge graphs."""
-    __tablename__ = "graph_metadata"
-
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    corpus_id = Column(UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
-    embedding_model = Column(String, nullable=False)
-    graph_type = Column(String, nullable=False)
-    version = Column(Integer, nullable=False)
-    node_count = Column(Integer, nullable=False)
-    edge_count = Column(Integer, nullable=False)
-    parameters = Column(JSONB, nullable=True)
-    file_path = Column(Text, nullable=False)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-
-    # Relationships
-    corpus = relationship("Document", back_populates="graphs") 
+class ProcessingStatus(Enum):
+    """Enum for document processing status."""
+    UPLOADED = "uploaded"
+    CHUNKED = "chunked"
+    EMBEDDED = "embedded"
+    GRAPH_BUILT = "graph_built" 

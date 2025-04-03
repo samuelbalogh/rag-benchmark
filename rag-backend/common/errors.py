@@ -167,6 +167,38 @@ class TaskError(AppError):
         )
 
 
+class EvaluationError(AppError):
+    """Raised when evaluation metrics calculation fails."""
+    
+    def __init__(
+        self,
+        message: str = "Evaluation metrics calculation failed",
+        details: Optional[Dict[str, Any]] = None,
+    ):
+        super().__init__(
+            message=message,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            error_code="evaluation_error",
+            details=details or {},
+        )
+
+
+class RAGError(AppError):
+    """Raised when a RAG operation fails."""
+    
+    def __init__(
+        self,
+        message: str = "RAG operation failed",
+        details: Optional[Dict[str, Any]] = None,
+    ):
+        super().__init__(
+            message=message,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            error_code="rag_error",
+            details=details or {},
+        )
+
+
 def handle_app_errors(error: Exception) -> HTTPException:
     """
     Convert application errors to FastAPI HTTP exceptions.

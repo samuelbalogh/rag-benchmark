@@ -13,7 +13,7 @@ help:
 	@echo "  make clean      - Clean up cache and build files"
 
 test:
-	poetry run pytest
+	poetry run python -m pytest
 
 test-unit:
 	poetry run pytest tests/unit

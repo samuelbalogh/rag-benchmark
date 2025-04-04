@@ -9,23 +9,25 @@ from common.database import SessionLocal
 from common.logging import get_logger, with_logging
 from common.models import Document, Chunk, ProcessingStatus
 from corpus_service.worker import app
+from corpus_service.chunking_strategies import get_chunking_strategy
 
 # Create logger
 logger = get_logger(__name__)
 
 
 @app.task(name="corpus_service.tasks.chunking.process_document")
-def process_document(document_id: str) -> Dict[str, Any]:
+def process_document(document_id: str, strategy_name: str = "fixed_length") -> Dict[str, Any]:
     """
     Process a document for chunking.
     
     Args:
         document_id: ID of the document to process
+        strategy_name: Chunking strategy to use
         
     Returns:
         Dict with processing results
     """
-    logger.info(f"Processing document for chunking: {document_id}")
+    logger.info(f"Processing document for chunking: {document_id} with strategy: {strategy_name}")
     
     # Create database session
     db = SessionLocal()
@@ -43,24 +45,49 @@ def process_document(document_id: str) -> Dict[str, Any]:
             )
             return {"success": False, "error": "Document not found"}
         
-        # Perform chunking
-        chunks = chunk_document(document.content, document.id)
+        # Get chunking strategy
+        strategy = get_chunking_strategy(strategy_name)
+        
+        # Extract chunking parameters from document metadata if available
+        chunking_params = document.metadata.get("chunking_params", {}) if document.metadata else {}
+        
+        # Perform chunking with selected strategy
+        chunks = strategy.chunk_document(document.content, document.id, **chunking_params)
         
         # Store chunks in database
         store_chunks(db, chunks)
+        
+        # Update document metadata with chunking information
+        if document.metadata:
+            document.metadata.update({
+                "chunking": {
+                    "strategy": strategy_name,
+                    "chunks_count": len(chunks),
+                    "parameters": chunking_params
+                }
+            })
+        else:
+            document.metadata = {
+                "chunking": {
+                    "strategy": strategy_name,
+                    "chunks_count": len(chunks),
+                    "parameters": chunking_params
+                }
+            }
+        db.commit()
         
         # Update processing status
         _update_processing_status(db, document_id, "chunking", "completed")
         
         # Trigger embedding generation
-        # This would be done by calling a task in the embedding service
-        # For now, we'll just log it
-        logger.info(f"Chunking completed for document: {document_id}")
+        logger.info(f"Chunking completed for document: {document_id}, triggering embedding generation")
+        trigger_embedding_generation(document_id)
         
         return {
             "success": True,
             "document_id": document_id,
             "chunks_count": len(chunks),
+            "strategy": strategy_name
         }
     except Exception as e:
         logger.error(f"Error processing document: {str(e)}", exc_info=True)

@@ -87,6 +87,9 @@
   - optional metadata filtering
 - **enhanced vector rag**:
   - hybrid sparse-dense retrieval
+    - dense vectors for semantic similarity (embedding-based)
+    - sparse vectors for keyword matching (bm25, tf-idf)
+    - configurable weighting between sparse and dense scores
   - reranking with cross-encoders
   - relevance threshold filtering
 - **knowledge graph rag**:
@@ -344,6 +347,7 @@ resource "vercel_project_domain" "api" {
 - ragas for evaluation
 - networkx for graph operations and algorithms
 - nano-graphrag for lightweight graphrag implementation
+- pyterrier or rank_bm25 for sparse vector retrieval
 - pytest for testing
 
 ### 8.2 development tools

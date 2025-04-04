@@ -43,6 +43,12 @@
 - [x] hybrid vector search (sparse + dense)
   - [x] configurable weighting between sparse and dense scores
 
+### knowledge graph
+- [x] complete entity extraction implementation
+- [x] relationship mapping between entities
+- [x] graph storage and serialization
+- [x] graph traversal using networkx
+
 ## TODO
 
 ### data pipeline
@@ -55,11 +61,8 @@
 - [ ] performance benchmarking of different combinations
 
 ### knowledge graph
-- [ ] complete entity extraction implementation
-- [ ] relationship mapping between entities
-- [ ] graph storage and serialization
-- [ ] graph traversal algorithms
-- [ ] integration with networkx
+- [ ] advanced graph algorithms
+- [ ] integration with query service
 - [ ] nano-graphrag implementation
 
 ### query enhancement

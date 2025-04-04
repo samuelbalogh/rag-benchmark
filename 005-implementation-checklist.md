@@ -20,37 +20,39 @@
 - [x] evaluation service metrics module
 - [x] celery task queue configuration
 
+### data pipeline
+- [x] document chunking implementation
+  - [x] fixed-length chunking
+  - [x] semantic chunking
+  - [x] paragraph-based chunking
+
+### embedding services
+- [x] integrate openai ada embeddings
+- [x] integrate openai text-embedding-3-small
+- [x] integrate openai text-embedding-3-large
+- [x] integrate voyage embeddings
+- [x] embedding caching system
+
+### vector store
+- [x] vector store implementation using pgvector
+- [x] efficient vector search optimization
+- [x] metadata filtering implementation
+- [x] sparse vector implementation
+  - [x] bm25 implementation for keyword matching
+  - [x] tf-idf implementation for sparse retrieval
+- [x] hybrid vector search (sparse + dense)
+  - [x] configurable weighting between sparse and dense scores
+
 ## TODO
 
 ### data pipeline
 - [ ] corpus selection and acquisition (lord of the rings text)
-- [ ] document chunking implementation
-  - [ ] fixed-length chunking
-  - [ ] semantic chunking
-  - [ ] paragraph-based chunking
 - [ ] metadata extraction from documents
 - [ ] document cleaning utilities
 
-### embedding services
-- [ ] integrate openai ada embeddings
-- [ ] integrate openai text-embedding-3-small
-- [ ] integrate openai text-embedding-3-large
-- [ ] integrate voyage embeddings
-- [ ] embedding caching system
-- [ ] embedding versioning
-
 ### vector store
-- [ ] vector store implementation using pgvector
-- [ ] efficient vector search optimization
-- [ ] metadata filtering implementation
-- [ ] sparse vector implementation
-  - [ ] bm25 implementation for keyword matching
-  - [ ] tf-idf implementation for sparse retrieval
-  - [ ] sparse vector storage and indexing
-- [ ] hybrid vector search (sparse + dense)
-  - [ ] configurable weighting between sparse and dense scores
-  - [ ] ensemble methods for result fusion
-  - [ ] performance benchmarking of different combinations
+- [ ] ensemble methods for result fusion
+- [ ] performance benchmarking of different combinations
 
 ### knowledge graph
 - [ ] complete entity extraction implementation

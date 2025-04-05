@@ -1,3 +1,5 @@
+"""Logging configuration for the RAG benchmark platform."""
+
 import json
 import logging
 import os
@@ -8,6 +10,7 @@ from functools import wraps
 from typing import Any, Callable, Dict, Optional, TypeVar, cast
 
 from dotenv import load_dotenv
+from common.config import get_settings
 
 load_dotenv()
 
@@ -51,37 +54,39 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(log_data)
 
 
-def get_logger(name: str) -> logging.Logger:
-    """
-    Get a configured logger.
+def get_logger(name: str, level: Optional[str] = None) -> logging.Logger:
+    """Get a logger with the specified name and level.
     
     Args:
-        name: Name of the logger
+        name: Logger name
+        level: Log level (defaults to level from settings)
         
     Returns:
-        Logger instance
+        Configured logger
     """
+    settings = get_settings()
+    
+    # Get log level from settings if not specified
+    if level is None:
+        level = settings.log_level
+    
+    # Convert string level to logging level
+    numeric_level = getattr(logging, level.upper(), None)
+    if not isinstance(numeric_level, int):
+        numeric_level = logging.INFO
+    
+    # Configure logger
     logger = logging.getLogger(name)
+    logger.setLevel(numeric_level)
     
-    # Set level based on environment variable
-    logger.setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
-    
-    # Remove existing handlers if any
-    for handler in logger.handlers[:]:
-        logger.removeHandler(handler)
-    
-    # Create a handler for console output
-    handler = logging.StreamHandler(sys.stdout)
-    
-    # Choose formatter based on environment variable
-    if LOG_FORMAT == "json":
-        handler.setFormatter(JsonFormatter())
-    else:
-        handler.setFormatter(logging.Formatter(
-            "[%(asctime)s] [%(levelname)s] [%(name)s]: %(message)s"
-        ))
-    
-    logger.addHandler(handler)
+    # Add console handler if not already added
+    if not logger.handlers:
+        handler = logging.StreamHandler(sys.stdout)
+        formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        )
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
     
     return logger
 
@@ -144,3 +149,26 @@ def with_logging(logger: Optional[logging.Logger] = None) -> Callable[[F], F]:
         return cast(F, wrapper)
     
     return decorator 
+
+
+def configure_root_logger() -> None:
+    """Configure the root logger."""
+    settings = get_settings()
+    
+    # Get log level from settings
+    level = settings.log_level
+    numeric_level = getattr(logging, level.upper(), None)
+    if not isinstance(numeric_level, int):
+        numeric_level = logging.INFO
+    
+    # Configure root logger
+    logging.basicConfig(
+        level=numeric_level,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[logging.StreamHandler(sys.stdout)]
+    )
+    
+    # Set log levels for third-party libraries
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+    logging.getLogger("matplotlib").setLevel(logging.WARNING)
+    logging.getLogger("openai").setLevel(logging.WARNING) 

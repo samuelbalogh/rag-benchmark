@@ -49,6 +49,19 @@
 - [x] graph storage and serialization
 - [x] graph traversal using networkx
 
+### query enhancement
+- [x] query expansion with synonyms
+- [x] hypothetical document embeddings
+- [x] query decomposition for complex questions
+- [x] llm-based query transformation
+- [x] testing and evaluation of enhancement strategies
+
+### rag implementations
+- [x] baseline vector rag
+- [x] enhanced vector rag with reranking
+- [x] knowledge graph rag
+- [x] hybrid rag combining vector and graph approaches
+
 ## TODO
 
 ### data pipeline
@@ -62,21 +75,9 @@
 
 ### knowledge graph
 - [ ] advanced graph algorithms
-- [ ] integration with query service
 - [ ] nano-graphrag implementation
 
-### query enhancement
-- [ ] query expansion with synonyms
-- [ ] hypothetical document embeddings
-- [ ] query decomposition for complex questions
-- [ ] llm-based query transformation
-- [ ] testing and evaluation of enhancement strategies
-
 ### rag implementations
-- [ ] baseline vector rag
-- [ ] enhanced vector rag with reranking
-- [ ] knowledge graph rag
-- [ ] hybrid rag combining vector and graph approaches
 - [ ] rag orchestration service
 
 ### evaluation framework

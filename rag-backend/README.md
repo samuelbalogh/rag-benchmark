@@ -84,13 +84,21 @@ We have completed the following key components:
    poetry install
    ```
 
-4. Set up environment variables:
+4. Install required models:
+   ```bash
+   # Install required SpaCy model
+   make install-models
+   # Or manually with:
+   # poetry run python -m spacy download en_core_web_sm
+   ```
+
+5. Set up environment variables:
    ```bash
    cp .env.example .env
    # Edit .env with your API keys and configuration
    ```
 
-5. Start the services with Docker Compose:
+6. Start the services with Docker Compose:
    ```bash
    make up
    ```
@@ -183,7 +191,7 @@ python test_all.py test_orchestration.complex
 
 ## Using the API
 
-Once the API is running, you can access it at http://localhost:8000. The following endpoints are available:
+Once the API is running, you can access it at http://localhost:8003. The following endpoints are available:
 
 - **Process Query**: `POST /query/process`
   - Process a query using a specific strategy
@@ -216,7 +224,7 @@ Once the API is running, you can access it at http://localhost:8000. The followi
     }
     ```
 
-Interactive API documentation is available at http://localhost:8000/docs
+Interactive API documentation is available at http://localhost:8003/docs
 
 ## Architecture
 

@@ -21,7 +21,7 @@ from api_gateway.routers import (
 # Get environment variables
 DEBUG = os.getenv("DEBUG", "False").lower() == "true"
 API_HOST = os.getenv("API_HOST", "0.0.0.0")
-API_PORT = int(os.getenv("API_PORT", "8000"))
+API_PORT = int(os.getenv("API_PORT", "8003"))
 
 # Create logger
 logger = get_logger(__name__)

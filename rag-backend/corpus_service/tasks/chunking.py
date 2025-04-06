@@ -2,6 +2,7 @@ import os
 import uuid
 import json
 from typing import Dict, List, Any, Optional, Tuple
+from datetime import datetime
 
 from sqlalchemy.orm import Session
 
@@ -140,71 +141,88 @@ def _update_processing_status(
     db.commit()
 
 
-def chunk_document(
-    content: str, 
-    document_id: str, 
-    chunk_size: int = 1000,
-    chunk_overlap: int = 200
-) -> List[Dict[str, Any]]:
+def chunk_document(document_id, max_chunk_size=1000, overlap=200):
     """
     Chunk a document into smaller segments.
     
     Args:
-        content: Document content
-        document_id: ID of the document
-        chunk_size: Size of each chunk in characters
-        chunk_overlap: Overlap between chunks in characters
-        
+        document_id: ID of the document to chunk
+        max_chunk_size: Maximum size of chunks
+        overlap: Overlap between chunks
+    
     Returns:
-        List of chunks
+        Dict with chunking results
     """
-    # Simple chunking by character count with overlap
-    chunks = []
+    logger.info(f"Chunking document: {document_id}")
     
-    # If content is small enough, use as a single chunk
-    if len(content) <= chunk_size:
-        chunks.append({
-            "id": str(uuid.uuid4()),
-            "document_id": document_id,
-            "content": content,
-            "metadata": {"index": 0, "start": 0, "end": len(content)},
-            "chunk_index": 0,
-        })
-        return chunks
-    
-    # Otherwise, chunk with overlap
-    start = 0
-    chunk_index = 0
-    
-    while start < len(content):
-        # Calculate end position
-        end = min(start + chunk_size, len(content))
+    try:
+        # Get document content
+        content = get_document_content(document_id)
+        if not content:
+            error_msg = f"Document content not found: {document_id}"
+            return {"status": "error", "message": error_msg}
         
-        # If not at the end of the content and not the first chunk
-        # Try to find a good break point (period followed by space)
-        if end < len(content) and start > 0:
-            # Look for the last period in the chunk
-            last_period = content.rfind('. ', start, end)
-            if last_period > start + chunk_size // 2:  # Only use if it's in the latter half
-                end = last_period + 1  # Include the period
+        # Perform chunking
+        chunks = []
         
-        # Create chunk
-        chunk_content = content[start:end]
+        # If content is small enough, use as a single chunk
+        if len(content) <= max_chunk_size:
+            chunks.append({
+                "id": str(uuid.uuid4()),
+                "document_id": document_id,
+                "content": content,
+                "metadata": {"index": 0, "start": 0, "end": len(content)},
+                "chunk_index": 0,
+            })
+        else:
+            # Chunk with overlap
+            start = 0
+            chunk_index = 0
+            
+            while start < len(content):
+                # Calculate end position
+                end = min(start + max_chunk_size, len(content))
+                
+                # If not at the end of the content and not the first chunk
+                # Try to find a good break point (period followed by space)
+                if end < len(content) and start > 0:
+                    # Look for the last period in the chunk
+                    last_period = content.rfind('. ', start, end)
+                    if last_period > start + max_chunk_size // 2:  # Only use if it's in the latter half
+                        end = last_period + 1  # Include the period
+                
+                # Create chunk
+                chunk_content = content[start:end]
+                
+                # Add to chunks list
+                chunks.append({
+                    "id": str(uuid.uuid4()),
+                    "document_id": document_id,
+                    "content": chunk_content,
+                    "metadata": {"index": chunk_index, "start": start, "end": end},
+                    "chunk_index": chunk_index,
+                })
+                
+                # Update start position for next chunk
+                start = end - overlap if end < len(content) else len(content)
+                chunk_index += 1
         
-        # Add to chunks list
-        chunks.append({
-            "id": str(uuid.uuid4()),
-            "document_id": document_id,
-            "content": chunk_content,
-            "metadata": {"index": chunk_index, "start": start, "end": end},
-            "chunk_index": chunk_index,
-        })
+        # Save chunks to database
+        save_result = save_chunks(chunks)
+        if not save_result["success"]:
+            return {"status": "error", "message": save_result["error"]}
         
-        # Update start position for next chunk
-        start = end - chunk_overlap if end < len(content) else len(content)
-        chunk_index += 1
-    
-    return chunks
+        # Update document status
+        update_document_status(document_id, "chunked")
+        
+        # Trigger embedding generation
+        trigger_embedding_generation.delay(document_id)
+        
+        return {"status": "success", "message": "Document chunking completed"}
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Error chunking document: {error_msg}", exc_info=True)
+        return {"status": "error", "message": error_msg}
 
 
 def store_chunks(db: Session, chunks: List[Dict[str, Any]]) -> None:
@@ -250,23 +268,132 @@ def cleanup_old_chunks(days: int = 30) -> Dict[str, Any]:
 
 
 def trigger_embedding_generation(document_id):
-    """Trigger embedding generation for a document.
+    """
+    Trigger embedding generation for a document.
+    
+    Args:
+        document_id: ID of the document
+    """
+    # In a real implementation, this would call the embedding service
+    # For now, just log the request
+    logger.info(f"Embedding generation triggered for document: {document_id}")
+
+
+def get_document_content(document_id):
+    """
+    Get the content of a document.
     
     Args:
         document_id: ID of the document
         
     Returns:
-        Task information
+        Document content
     """
-    logger.info(f"Triggering embedding generation for document: {document_id}")
+    # Create database session
+    db = SessionLocal()
     
-    # This would call the embedding service in production
-    # For testing, we just return a success response
-    return {
-        "status": "success",
-        "document_id": document_id,
-        "message": "Embedding generation triggered"
-    }
+    try:
+        # Get document
+        document = db.query(Document).filter(Document.id == document_id).first()
+        if not document:
+            logger.error(f"Document not found: {document_id}")
+            return None
+        
+        return document.content
+    except Exception as e:
+        logger.error(f"Error getting document content: {str(e)}", exc_info=True)
+        return None
+    finally:
+        db.close()
+
+
+def save_chunks(chunks, document_id=None):
+    """
+    Save chunks to the database.
+    
+    Args:
+        chunks: List of chunks to save
+        document_id: Optional document ID (if not included in chunks)
+        
+    Returns:
+        Dict with success status and message
+    """
+    # Create database session
+    db = SessionLocal()
+    
+    try:
+        # Prepare chunks for database
+        chunk_objects = []
+        for i, chunk in enumerate(chunks):
+            # If chunk is a dict, convert to Chunk object
+            if isinstance(chunk, dict):
+                # Use document_id from chunk if available, otherwise use parameter
+                doc_id = chunk.get("document_id", document_id)
+                
+                # Create chunk object
+                chunk_obj = Chunk(
+                    id=chunk.get("id", str(uuid.uuid4())),
+                    document_id=doc_id,
+                    content=chunk.get("content", ""),
+                    position=chunk.get("chunk_index", i),
+                    created_at=datetime.utcnow()
+                )
+            else:
+                # Assume chunk is already a Chunk object
+                chunk_obj = chunk
+            
+            chunk_objects.append(chunk_obj)
+        
+        # Add chunks to database
+        db.add_all(chunk_objects)
+        db.commit()
+        
+        logger.info(f"Saved {len(chunk_objects)} chunks for document_id: {document_id}")
+        
+        return {
+            "success": True,
+            "message": f"Saved {len(chunk_objects)} chunks"
+        }
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error saving chunks: {str(e)}", exc_info=True)
+        return {
+            "success": False,
+            "error": str(e)
+        }
+    finally:
+        db.close()
+
+
+def update_document_status(document_id, status, error_message=None):
+    """
+    Update the status of a document.
+    
+    Args:
+        document_id: ID of the document
+        status: Status to set
+        error_message: Optional error message
+    """
+    # Create database session
+    db = SessionLocal()
+    
+    try:
+        # Get document
+        document = db.query(Document).filter(Document.id == document_id).first()
+        if not document:
+            logger.error(f"Document not found: {document_id}")
+            return
+        
+        # Update status
+        document.status = status
+        db.commit()
+        
+        logger.info(f"Updated document status: {document_id} -> {status}")
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error updating document status: {str(e)}", exc_info=True)
+    finally:
+        db.close()
 
 # Make it available as a task
 trigger_embedding_generation.delay = trigger_embedding_generation 

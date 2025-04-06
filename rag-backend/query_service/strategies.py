@@ -11,7 +11,7 @@ from scipy.spatial.distance import cosine
 from vector_store.service import get_top_documents, get_documents_by_metadata, hybrid_search
 from vector_store.models import Document
 from embedding_service.service import get_embedding
-from knowledge_graph.service import get_entity_subgraph, get_related_nodes, search_graph
+from knowledge_graph_service.service import get_graph, extract_entities, extract_relevant_subgraph
 from common.logging import get_logger
 
 # Set up logging
@@ -77,11 +77,17 @@ class VectorSearchStrategy(RagStrategy):
             # Get query embedding
             query_embedding = get_embedding(search_query)
             
+            # Extract document_id if specified
+            document_id = kwargs.get("document_id") or self.parameters.get("document_id")
+            model_id = kwargs.get("model_id") or self.parameters.get("model_id", "text-embedding-ada-002")
+            
             # Get top documents
             documents = get_top_documents(
-                query_embedding, 
-                top_k=top_k, 
-                filters=kwargs.get("filters", None)
+                query_vector=query_embedding, 
+                k=top_k,
+                model_id=model_id,
+                filters=kwargs.get("filters"),
+                document_id=document_id
             )
             
             # Handle multiple enhanced queries (if enhanced_query is a list)
@@ -90,9 +96,11 @@ class VectorSearchStrategy(RagStrategy):
                 for subquery in enhanced_query:
                     subquery_embedding = get_embedding(subquery)
                     subquery_docs = get_top_documents(
-                        subquery_embedding, 
-                        top_k=max(2, top_k // len(enhanced_query)),
-                        filters=kwargs.get("filters", None)
+                        query_vector=subquery_embedding, 
+                        k=max(2, top_k // len(enhanced_query)),
+                        model_id=model_id,
+                        filters=kwargs.get("filters"),
+                        document_id=document_id
                     )
                     all_docs.extend(subquery_docs)
                 
@@ -145,39 +153,70 @@ class KnowledgeGraphStrategy(RagStrategy):
             # Extract entities from query
             query_text = enhanced_query if enhanced_query and isinstance(enhanced_query, str) else query
             
-            # Get related entities from knowledge graph
-            graph_results = search_graph(query_text)
-            
-            if not graph_results or not graph_results.get("entities"):
-                logger.info(f"No entities found in query: {query_text}")
+            # Get document_id from parameters
+            document_id = kwargs.get("document_id")
+            if not document_id:
+                logger.error("KnowledgeGraphStrategy requires document_id parameter")
                 return [], metadata
+                
+            # Get graph for the document
+            graph = get_graph(document_id)
+            if not graph:
+                logger.warning(f"No knowledge graph found for document: {document_id}")
+                return [], metadata
+                
+            # Extract entities from query
+            query_entities = extract_entities(query_text)
             
-            # Get relevant documents based on entity IDs
-            entity_ids = [entity["id"] for entity in graph_results.get("entities", [])]
-            document_ids = []
+            # Find relevant subgraph
+            subgraph = extract_relevant_subgraph(graph, query_entities)
             
-            # For each entity, get related document IDs
-            for entity_id in entity_ids:
-                related_nodes = get_related_nodes(entity_id, "Document")
-                document_ids.extend([node["id"] for node in related_nodes])
+            # If no relevant subgraph found, fall back to vector search
+            if not subgraph or not subgraph.nodes():
+                logger.info(f"No relevant subgraph found for query: {query_text}")
+                
+                # Fall back to vector search
+                query_embedding = get_embedding(query_text)
+                
+                documents = get_top_documents(
+                    query_embedding, 
+                    top_k=top_k,
+                    filters=kwargs.get("filters", None)
+                )
+                
+                metadata["fallback_to_vector"] = True
+                metadata["time_taken"] = time.time() - start_time
+                metadata["num_documents"] = len(documents)
+                
+                return documents, metadata
             
-            # Remove duplicates
-            document_ids = list(set(document_ids))
+            # Get document chunks based on the subgraph
+            # In a real implementation, we would link subgraph nodes to document chunks
+            # Here we're using a simplified approach
             
-            # Fetch documents by ID
+            # Simulate fetching documents related to entities in the subgraph
+            entity_names = list(subgraph.nodes())
+            
+            # Get documents by metadata 
+            # This assumes document metadata contains entity information
             documents = []
-            if document_ids:
-                for doc_id in document_ids[:top_k]:
-                    docs = get_documents_by_metadata({"id": doc_id})
-                    documents.extend(docs)
+            for entity in entity_names:
+                entity_docs = get_documents_by_metadata({"entities": entity})
+                documents.extend(entity_docs)
+            
+            # Deduplicate documents
+            unique_docs = {}
+            for doc in documents:
+                if doc.id not in unique_docs:
+                    unique_docs[doc.id] = doc
+            
+            documents = list(unique_docs.values())[:top_k]
             
             # If we don't have enough documents, fall back to vector search
             if len(documents) < top_k:
-                logger.info(f"Knowledge graph returned only {len(documents)} documents, falling back to vector search")
-                # Get query embedding
+                logger.info(f"Knowledge graph returned only {len(documents)} documents, adding vector search results")
                 query_embedding = get_embedding(query_text)
                 
-                # Get additional documents
                 additional_docs = get_top_documents(
                     query_embedding, 
                     top_k=top_k - len(documents),
@@ -194,7 +233,7 @@ class KnowledgeGraphStrategy(RagStrategy):
             # Record metadata
             metadata["time_taken"] = time.time() - start_time
             metadata["num_documents"] = len(documents)
-            metadata["entities_found"] = len(entity_ids)
+            metadata["entities_found"] = len(entity_names)
             
             return documents[:top_k], metadata
             
@@ -229,27 +268,35 @@ class HybridStrategy(RagStrategy):
         metadata = {"strategy": "hybrid", "parameters": {**self.parameters, **kwargs}}
         
         try:
-            # Run both strategies in parallel
+            # Get the query text to use
             query_text = enhanced_query if enhanced_query and isinstance(enhanced_query, str) else query
             
             # Get query embedding
             query_embedding = get_embedding(query_text)
             
-            # Get documents using hybrid search
-            hybrid_weight = kwargs.get("hybrid_weight", 0.7)  # Default weight for vector vs semantic
+            # Extract parameters
+            document_id = kwargs.get("document_id") or self.parameters.get("document_id")
+            model_id = kwargs.get("model_id") or self.parameters.get("model_id", "text-embedding-ada-002")
+            vector_weight = kwargs.get("vector_weight") or self.parameters.get("vector_weight", 0.7)
+            bm25_weight = kwargs.get("bm25_weight") or self.parameters.get("bm25_weight", 0.3)
+            metadata_filters = kwargs.get("metadata") or self.parameters.get("metadata", {})
+            
+            # Use hybrid search
             documents = hybrid_search(
+                query_vector=query_embedding,
+                metadata=metadata_filters,
+                k=top_k,
                 query_text=query_text,
-                query_embedding=query_embedding,
-                top_k=top_k,
-                vector_weight=hybrid_weight,
-                semantic_weight=1.0 - hybrid_weight,
-                filters=kwargs.get("filters", None)
+                model_id=model_id,
+                vector_weight=vector_weight,
+                bm25_weight=bm25_weight,
+                document_id=document_id
             )
             
             # Record metadata
             metadata["time_taken"] = time.time() - start_time
             metadata["num_documents"] = len(documents)
-            metadata["hybrid_weight"] = hybrid_weight
+            metadata["hybrid_weight"] = vector_weight
             
             return documents, metadata
             

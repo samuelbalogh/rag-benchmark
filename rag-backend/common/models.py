@@ -128,9 +128,26 @@ class ApiKey(Base):
     is_active = Column(Integer, default=1)  # Using Integer for SQLite compatibility 
 
 
-class ProcessingStatus(Enum):
-    """Enum for document processing status."""
+class ProcessingStatusEnum(Enum):
+    """Enum for document processing status values."""
     UPLOADED = "uploaded"
     CHUNKED = "chunked"
     EMBEDDED = "embedded"
-    GRAPH_BUILT = "graph_built" 
+    GRAPH_BUILT = "graph_built"
+
+
+class ProcessingStatus(Base):
+    """Processing status model for tracking document processing."""
+    
+    __tablename__ = "processing_status"
+    
+    id = Column(String, primary_key=True, index=True)
+    document_id = Column(String, ForeignKey("documents.id"), index=True)
+    process_type = Column(String, index=True)  # chunking, embedding, graph, etc.
+    status = Column(String, index=True)  # pending, processing, completed, failed
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationship (optional)
+    document = relationship("Document") 

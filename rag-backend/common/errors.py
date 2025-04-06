@@ -189,12 +189,14 @@ class RAGError(AppError):
     def __init__(
         self,
         message: str = "RAG operation failed",
+        code: str = "rag_error",
         details: Optional[Dict[str, Any]] = None,
     ):
+        self.code = code
         super().__init__(
             message=message,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            error_code="rag_error",
+            error_code=code,
             details=details or {},
         )
 

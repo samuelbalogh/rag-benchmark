@@ -4,7 +4,7 @@ import numpy as np
 
 # assuming this is the structure, update imports if needed
 from embedding_service.service import generate_embeddings
-from embedding_service.models import EmbeddingModel
+from embedding_service.models import EmbeddingModel, OpenAIEmbeddingModel
 
 
 class TestEmbeddingService(unittest.TestCase):
@@ -44,23 +44,32 @@ class TestEmbeddingService(unittest.TestCase):
         self.assertEqual(result["model"], model_name)
         self.assertEqual(result["chunks_processed"], 2)
     
-    @patch('embedding_service.models.openai.embedding.create')
+    @patch('embedding_service.models.openai_client.embeddings.create')
     def test_embedding_model_embed_text_happy_path(self, mock_openai_embed):
         # arrange
-        model = EmbeddingModel(model_id="text-embedding-ada-002", dimensions=1536)
-        text = "This is a test text for embedding"
+        model = OpenAIEmbeddingModel(model_id="text-embedding-ada-002", dimensions=1536)
+        texts = ["This is a test text for embedding"]
         
         # mock OpenAI response
         mock_embedding = np.random.rand(1536).tolist()
-        mock_openai_response = {
-            "data": [{"embedding": mock_embedding}]
-        }
-        mock_openai_embed.return_value = mock_openai_response
+        
+        # Create a mock response object with data attribute that contains objects with embedding attribute
+        mock_embedding_data = MagicMock()
+        mock_embedding_data.embedding = mock_embedding
+        
+        mock_response = MagicMock()
+        mock_response.data = [mock_embedding_data]
+        
+        mock_openai_embed.return_value = mock_response
         
         # act
-        result = model.embed(text)
+        result = model.embed(texts)
         
         # assert
-        mock_openai_embed.assert_called_once()
-        self.assertEqual(len(result), 1536)  # check dimensions
-        self.assertEqual(result, mock_embedding) 
+        mock_openai_embed.assert_called_once_with(
+            model="text-embedding-ada-002",
+            input=texts
+        )
+        self.assertEqual(len(result), 1)  # one item in the list
+        self.assertEqual(len(result[0]), 1536)  # check dimensions
+        self.assertEqual(result[0], mock_embedding)  # check the embedding value 

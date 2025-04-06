@@ -214,8 +214,8 @@ async def get_query_enhancement_strategies(
                     "model": {
                         "description": "LLM model to use",
                         "type": "string",
-                        "default": "gpt-3.5-turbo",
-                        "options": ["gpt-3.5-turbo", "gpt-4o"],
+                        "default": "gpt-4o-mini",
+                        "options": ["gpt-4o-mini", "gpt-4o"],
                     },
                 },
             },

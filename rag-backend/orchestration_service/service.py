@@ -35,27 +35,27 @@ class RagOrchestrator:
                 "enhancement_method": "llm_rewrite",
                 "strategy_name": "vector_search",
                 "top_k": 5,
-                "llm_model": "gpt-3.5-turbo"
+                "llm_model": "gpt-4o-mini"
             },
             "knowledge_graph": {
                 "enhancement_method": None,
                 "strategy_name": "knowledge_graph",
                 "top_k": 5,
-                "llm_model": "gpt-3.5-turbo"
+                "llm_model": "gpt-4o-mini"
             },
             "hybrid": {
                 "enhancement_method": "query_decomposition",
                 "strategy_name": "hybrid",
                 "strategy_params": {"hybrid_weight": 0.7},
                 "top_k": 5,
-                "llm_model": "gpt-3.5-turbo"
+                "llm_model": "gpt-4o-mini"
             },
             "enhanced_vector": {
                 "enhancement_method": "combined",
                 "enhancement_methods": ["llm_rewrite", "synonym_expansion"],
                 "strategy_name": "vector_search",
                 "top_k": 8,
-                "llm_model": "gpt-3.5-turbo"
+                "llm_model": "gpt-4o-mini"
             }
         }
     

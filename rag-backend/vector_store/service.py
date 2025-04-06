@@ -1,16 +1,19 @@
-"""Vector store implementation for efficient similarity search."""
+"""Vector store service for document retrieval."""
 
+import time
 import logging
 import uuid
 from typing import List, Dict, Any, Optional, Union, Tuple
-import time
 
 from sqlalchemy import text, and_, func
 from sqlalchemy.orm import Session
 import numpy as np
+from sklearn.metrics.pairwise import cosine_similarity
 
+from vector_store.models import Document
 from common.database import SessionLocal
 from common.logging import get_logger
+from common.config import get_settings
 
 # Initialize logger
 logger = get_logger(__name__)
@@ -314,4 +317,190 @@ class VectorStore:
             logger.error(f"Error getting collection stats: {str(e)}", exc_info=True)
             return {
                 "error": str(e)
-            } 
+            }
+    
+    def get_documents_from_results(self, results: List[Dict[str, Any]]) -> List[Document]:
+        """
+        Convert database results to Document objects.
+        
+        Args:
+            results: List of raw database results
+            
+        Returns:
+            List of Document objects
+        """
+        documents = []
+        for result in results:
+            doc = Document(
+                id=result["chunk_id"],
+                content=result["content"],
+                metadata=result.get("metadata", {})
+            )
+            if "similarity" in result:
+                doc.score = result["similarity"]
+            documents.append(doc)
+        return documents
+
+
+# Create a global instance for use with module functions
+_vector_store = None
+
+def get_vector_store() -> VectorStore:
+    """Get or create a VectorStore instance."""
+    global _vector_store
+    if _vector_store is None:
+        _vector_store = VectorStore()
+    return _vector_store
+
+
+def get_top_documents(query_vector: np.ndarray, k: int = 5, **kwargs) -> List[Document]:
+    """Get top k documents most similar to the query vector.
+    
+    Args:
+        query_vector: Query embedding vector
+        k: Number of documents to return
+        **kwargs: Additional search parameters (model_id, threshold, metadata_filter, document_id)
+        
+    Returns:
+        List of most similar documents
+    """
+    try:
+        # Get vector store instance
+        vector_store = get_vector_store()
+        
+        # Extract additional parameters
+        model_id = kwargs.get("model_id", "text-embedding-ada-002")
+        threshold = kwargs.get("threshold")
+        metadata_filter = kwargs.get("filters")
+        document_id = kwargs.get("document_id")
+        
+        # Search for similar vectors
+        results = vector_store.search(
+            query_vector=query_vector.tolist(),
+            model_id=model_id,
+            limit=k,
+            threshold=threshold,
+            metadata_filter=metadata_filter,
+            document_id=document_id
+        )
+        
+        # Convert to Document objects
+        return vector_store.get_documents_from_results(results)
+    except Exception as e:
+        logger.error(f"Error getting top documents: {str(e)}")
+        return []
+
+
+def get_documents_by_metadata(metadata: Dict[str, Any]) -> List[Document]:
+    """Get documents matching metadata filters.
+    
+    Args:
+        metadata: Dictionary of metadata key-value pairs to filter by
+        
+    Returns:
+        List of matching documents
+    """
+    try:
+        # Get vector store instance
+        vector_store = get_vector_store()
+        
+        # Convert to SQL query
+        query = """
+            SELECT id, document_id, content, metadata
+            FROM chunks
+            WHERE 1=1
+        """
+        
+        params = {}
+        
+        # Add metadata filters
+        for i, (key, value) in enumerate(metadata.items()):
+            query += f" AND metadata->>{key!r} = :value_{i}"
+            params[f"value_{i}"] = str(value)
+        
+        # Execute query
+        results = vector_store.db.execute(text(query), params).fetchall()
+        
+        # Process results
+        processed_results = []
+        for row in results:
+            processed_results.append({
+                "chunk_id": row.id,
+                "document_id": row.document_id,
+                "content": row.content,
+                "metadata": row.metadata
+            })
+        
+        # Convert to Document objects
+        return vector_store.get_documents_from_results(processed_results)
+    except Exception as e:
+        logger.error(f"Error getting documents by metadata: {str(e)}")
+        return []
+
+
+def hybrid_search(query_vector: np.ndarray, metadata: Dict[str, Any] = None, k: int = 5, **kwargs) -> List[Document]:
+    """Combine vector similarity and metadata filtering.
+    
+    Args:
+        query_vector: Query embedding vector
+        metadata: Metadata filters
+        k: Number of documents to return
+        **kwargs: Additional search parameters
+        
+    Returns:
+        List of documents matching both criteria
+    """
+    try:
+        # Get vector store instance
+        vector_store = get_vector_store()
+        
+        # Check if we have query text for hybrid search
+        query_text = kwargs.get("query_text", "")
+        
+        if query_text:
+            # Use hybrid BM25+vector search
+            model_id = kwargs.get("model_id", "text-embedding-ada-002")
+            vector_weight = kwargs.get("vector_weight", 0.7)
+            bm25_weight = kwargs.get("bm25_weight", 0.3)
+            threshold = kwargs.get("threshold")
+            document_id = kwargs.get("document_id")
+            
+            results = vector_store.hybrid_search(
+                query_text=query_text,
+                query_vector=query_vector.tolist(),
+                model_id=model_id,
+                limit=k,
+                vector_weight=vector_weight,
+                bm25_weight=bm25_weight,
+                threshold=threshold,
+                document_id=document_id
+            )
+            
+            return vector_store.get_documents_from_results(results)
+        else:
+            # If no query text, first filter by metadata, then do vector search
+            if metadata:
+                # Get documents matching metadata
+                metadata_docs = get_documents_by_metadata(metadata)
+                
+                if not metadata_docs:
+                    return []
+                
+                # Extract document IDs
+                doc_ids = [doc.id for doc in metadata_docs]
+                
+                # Use these IDs to filter vector search
+                vector_search_results = get_top_documents(
+                    query_vector=query_vector,
+                    k=k,
+                    document_id=doc_ids,
+                    **kwargs
+                )
+                
+                return vector_search_results
+            else:
+                # If no metadata, just do regular vector search
+                return get_top_documents(query_vector, k, **kwargs)
+    except Exception as e:
+        logger.error(f"Error performing hybrid search: {str(e)}")
+        return [] 

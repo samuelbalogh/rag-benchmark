@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from common.database import SessionLocal
 from common.logging import get_logger
+from vector_store.models import Document
 
 # Initialize logger
 logger = get_logger(__name__)
@@ -189,7 +190,7 @@ class BM25Retriever:
         query: str,
         limit: int = 5,
         document_id: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
+    ) -> List[Document]:
         """
         Search for documents matching query using BM25.
         
@@ -199,7 +200,7 @@ class BM25Retriever:
             document_id: Optional document ID to filter results
             
         Returns:
-            List of matching chunks with BM25 scores
+            List of Document objects with BM25 scores
         """
         start_time = time.time()
         logger.info(f"BM25 search for query: {query}")
@@ -248,16 +249,16 @@ class BM25Retriever:
                 # Calculate BM25 score
                 score = self.calculate_bm25_score(query_terms, doc_text)
                 
-                scored_results.append({
-                    "chunk_id": doc_id,
-                    "document_id": row.document_id,
-                    "content": doc_text,
-                    "metadata": row.metadata,
-                    "similarity": score
-                })
+                doc = Document(
+                    id=doc_id,
+                    content=doc_text,
+                    metadata=row.metadata or {}
+                )
+                doc.score = score
+                scored_results.append(doc)
             
             # Sort by score and limit
-            scored_results.sort(key=lambda x: x["similarity"], reverse=True)
+            scored_results.sort(key=lambda x: x.score, reverse=True)
             top_results = scored_results[:limit]
             
             end_time = time.time()
@@ -360,7 +361,7 @@ class TFIDF:
         query: str,
         limit: int = 5,
         document_id: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
+    ) -> List[Document]:
         """Search for documents using TF-IDF vectors."""
         start_time = time.time()
         
@@ -368,7 +369,7 @@ class TFIDF:
             # Calculate query vector
             query_vector = self.calculate_tf_idf_vector(query)
             
-            # Get candidate documents (similar to BM25 implementation)
+            # Get candidate documents
             filter_query = """
                 SELECT id, document_id, content, metadata
                 FROM chunks
@@ -399,34 +400,105 @@ class TFIDF:
             # Execute initial filtering
             candidates = self.db.execute(text(filter_query), params).fetchall()
             
-            # Calculate similarity scores
+            # Calculate TF-IDF scores for candidates
             scored_results = []
             for row in candidates:
+                doc_id = row.id
                 doc_text = row.content
                 
-                # Calculate document vector
+                # Calculate TF-IDF vector for document
                 doc_vector = self.calculate_tf_idf_vector(doc_text)
                 
-                # Calculate similarity
+                # Calculate cosine similarity with query vector
                 similarity = self.cosine_similarity(query_vector, doc_vector)
                 
-                scored_results.append({
-                    "chunk_id": row.id,
-                    "document_id": row.document_id,
-                    "content": doc_text,
-                    "metadata": row.metadata,
-                    "similarity": similarity
-                })
+                doc = Document(
+                    id=doc_id,
+                    content=doc_text,
+                    metadata=row.metadata or {}
+                )
+                doc.score = similarity
+                scored_results.append(doc)
             
-            # Sort by score and limit
-            scored_results.sort(key=lambda x: x["similarity"], reverse=True)
+            # Sort by similarity and limit
+            scored_results.sort(key=lambda x: x.score, reverse=True)
             top_results = scored_results[:limit]
             
             end_time = time.time()
             logger.info(f"TF-IDF search completed in {end_time - start_time:.4f} seconds")
             
             return top_results
-            
+        
         except Exception as e:
             logger.error(f"Error in TF-IDF search: {str(e)}", exc_info=True)
-            return [] 
+            return []
+
+
+# Module-level functions for API compatibility
+
+
+def search_bm25(query: str, limit: int = 5, document_id: Optional[str] = None) -> List[Document]:
+    """
+    Search for documents using BM25 scoring.
+    
+    Args:
+        query: Search query
+        limit: Maximum number of results
+        document_id: Optional document ID to filter results
+        
+    Returns:
+        List of Document objects
+    """
+    retriever = BM25Retriever()
+    try:
+        results = retriever.search(query, limit, document_id)
+        return results
+    finally:
+        del retriever  # Ensure resources are cleaned up
+
+
+def search_tfidf(query: str, limit: int = 5, document_id: Optional[str] = None) -> List[Document]:
+    """
+    Search for documents using TF-IDF scoring.
+    
+    Args:
+        query: Search query
+        limit: Maximum number of results
+        document_id: Optional document ID to filter results
+        
+    Returns:
+        List of Document objects
+    """
+    retriever = TFIDF()
+    try:
+        results = retriever.search(query, limit, document_id)
+        return results
+    finally:
+        del retriever  # Ensure resources are cleaned up
+
+
+def keyword_search(
+    query: str,
+    algorithm: str = "bm25",
+    limit: int = 5,
+    document_id: Optional[str] = None
+) -> List[Document]:
+    """
+    Search for documents using keyword-based retrieval.
+    
+    Args:
+        query: Search query
+        algorithm: Algorithm to use ('bm25' or 'tfidf')
+        limit: Maximum number of results
+        document_id: Optional document ID to filter results
+        
+    Returns:
+        List of Document objects
+    """
+    if algorithm.lower() == "bm25":
+        return search_bm25(query, limit, document_id)
+    elif algorithm.lower() == "tfidf":
+        return search_tfidf(query, limit, document_id)
+    else:
+        logger.error(f"Unsupported algorithm: {algorithm}")
+        return [] 

@@ -14,6 +14,7 @@ class TestModel(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True)
+    value = Column(Integer)
 
 
 class TestDatabase(unittest.TestCase):
@@ -39,7 +40,8 @@ class TestDatabase(unittest.TestCase):
         self.assertEqual(result, mock_session)
     
     @patch('common.database.create_engine')
-    def test_init_db_happy_path(self, mock_create_engine):
+    @patch('common.database.Base.metadata.create_all')
+    def test_init_db_happy_path(self, mock_create_all, mock_create_engine):
         # arrange
         mock_engine = MagicMock()
         mock_create_engine.return_value = mock_engine
@@ -51,7 +53,7 @@ class TestDatabase(unittest.TestCase):
         # assert
         mock_create_engine.assert_called_once_with(db_url)
         mock_engine.connect.assert_called_once()
-        self.assertEqual(Base.metadata.create_all.call_count, 1)
+        mock_create_all.assert_called_once_with(bind=mock_engine)
         
         # verify that the model is registered
         self.assertIn(TestModel.__tablename__, Base.metadata.tables) 

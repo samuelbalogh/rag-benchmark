@@ -5,8 +5,7 @@ from contextlib import contextmanager
 from urllib.parse import quote_plus
 
 from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, declarative_base
 
 # Use environment variables if available, otherwise use defaults
 # During testing, we'll mock this connection

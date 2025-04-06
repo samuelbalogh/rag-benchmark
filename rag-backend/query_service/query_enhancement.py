@@ -106,7 +106,7 @@ class QueryEnhancer:
             """
             
             response = openai_client.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": "You are an expert research assistant. Create a detailed and informative document."},
                     {"role": "user", "content": prompt}
@@ -141,7 +141,7 @@ class QueryEnhancer:
             """
             
             response = openai_client.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": "You are an expert at breaking down complex questions into simpler components."},
                     {"role": "user", "content": prompt}
@@ -184,7 +184,7 @@ class QueryEnhancer:
             """
             
             response = openai_client.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": "You are an expert at rephrasing questions to make them more specific and information-rich."},
                     {"role": "user", "content": prompt}
@@ -198,6 +198,30 @@ class QueryEnhancer:
             logger.error(f"Error rewriting query with LLM: {str(e)}")
             # Fallback to original query
             return query
+    
+    def rewrite_with_llm(self, query: str) -> str:
+        """Alias for llm_rewrite for backward compatibility.
+        
+        Args:
+            query: The original query
+            
+        Returns:
+            Rephrased query
+        """
+        return self.llm_rewrite(query)
+
+
+def rewrite_with_llm(query: str) -> str:
+    """Use LLM to rephrase query for better retrieval.
+    
+    Args:
+        query: The original query
+        
+    Returns:
+        Rephrased query
+    """
+    enhancer = QueryEnhancer()
+    return enhancer.llm_rewrite(query)
 
 
 def enhance_query(query: str, enhancement_method: Optional[str] = None, parameters: Optional[Dict[str, Any]] = None) -> Union[str, List[str]]:

@@ -15,6 +15,8 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from vector_store.models import Document
 from common.logging import get_logger
 from common.config import get_settings
+from evaluation_service.metrics import calculate_relevance, calculate_truthfulness, calculate_completeness
+from evaluation_service.utils import get_latency, count_tokens, get_benchmark_questions, process_query, save_benchmark_results
 
 # Initialize logger
 logger = get_logger(__name__)
@@ -182,12 +184,12 @@ def _extract_statements(text: str) -> List[str]:
 
 def _is_statement_supported(statement: str, context: str) -> bool:
     """Check if a statement is supported by the context.
-    
-    Args:
+        
+        Args:
         statement: Statement to check
         context: Context text
-        
-    Returns:
+            
+        Returns:
         True if statement is supported, False otherwise
     """
     # Simple heuristic: check for keyword overlap
@@ -254,12 +256,12 @@ def evaluate_context_recall(documents: List[Document], ground_truth: str) -> Eva
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=10))
 def evaluate_answer_relevancy(query: str, response: str) -> EvaluationResult:
     """Evaluate the relevancy of the answer to the query using an LLM judge.
-    
-    Args:
+        
+        Args:
         query: Original query
         response: Generated response
-        
-    Returns:
+            
+        Returns:
         EvaluationResult with score, explanation and metadata
     """
     try:
@@ -275,7 +277,7 @@ def evaluate_answer_relevancy(query: str, response: str) -> EvaluationResult:
         """
         
         llm_response = openai_client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "You are an expert evaluator of question answering systems."},
                 {"role": "user", "content": prompt}
@@ -329,8 +331,8 @@ def evaluate_response(
         retrieved_documents: Documents retrieved by the system
         ground_truth: Optional ground truth answer
         methods: List of evaluation methods to use
-        
-    Returns:
+            
+        Returns:
         Dictionary mapping method names to EvaluationResult objects
     """
     if methods is None:
@@ -360,4 +362,94 @@ def evaluate_response(
                 metadata={"error": str(e)}
             )
     
-    return results 
+    return results
+
+
+class EvaluationService:
+    """Service for evaluating RAG system performance."""
+    
+    def __init__(self, db=None):
+        """Initialize the evaluation service.
+        
+        Args:
+            db: Optional database session
+        """
+        self.db = db
+        self.logger = get_logger(__name__)
+    
+    @staticmethod
+    def calculate_metrics(query: str, context: List[str], response: str) -> Dict[str, Any]:
+        """Calculate evaluation metrics for a RAG response.
+        
+        Args:
+            query: Original query
+            context: Retrieved context passages
+            response: Generated response
+            
+        Returns:
+            Dictionary with metrics results
+        """
+        try:
+            # Calculate individual metrics
+            relevance = calculate_relevance(query, context, response)
+            truthfulness = calculate_truthfulness(context, response)
+            completeness = calculate_completeness(query, response)
+            latency = get_latency()
+            tokens = count_tokens(context, response)
+            
+            return {
+                "relevance": relevance,
+                "truthfulness": truthfulness,
+                "completeness": completeness,
+                "latency_ms": latency,
+                "tokens": tokens
+            }
+        except Exception as e:
+            logger.error(f"Error calculating metrics: {str(e)}")
+            return {
+                "error": str(e)
+            }
+    
+    @staticmethod
+    def run_benchmark(document_ids: List[str], strategy_name: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """Run benchmark evaluation on a set of test questions.
+        
+        Args:
+            document_ids: List of document IDs to use for retrieval
+            strategy_name: Name of the retrieval strategy to test
+            parameters: Strategy parameters
+            
+        Returns:
+            Dictionary with benchmark results
+        """
+        try:
+            # Get benchmark questions
+            questions = get_benchmark_questions()
+            results = []
+            
+            # Process each question
+            for question in questions:
+                result = process_query(question["id"], question["question"], 
+                                    document_ids, strategy_name, parameters)
+                results.append(result)
+            
+            # Calculate aggregate metrics
+            avg_relevance = np.mean([r["metrics"]["relevance"] for r in results])
+            avg_completeness = np.mean([r["metrics"]["completeness"] for r in results])
+            
+            benchmark_results = {
+                "total_questions": len(questions),
+                "avg_relevance": float(avg_relevance),
+                "avg_completeness": float(avg_completeness),
+                "detailed_results": results
+            }
+            
+            # Save results
+            save_benchmark_results(benchmark_results)
+            
+            return benchmark_results
+        except Exception as e:
+            logger.error(f"Error running benchmark: {str(e)}")
+            return {
+                "error": str(e)
+            } 

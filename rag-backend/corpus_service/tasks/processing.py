@@ -6,6 +6,7 @@ from typing import Dict, List, Any, Optional
 
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, func
+import celery  # Import celery for current_task
 
 from common.database import SessionLocal
 from common.logging import get_logger, with_logging
@@ -29,28 +30,28 @@ def process_document_pipeline(document_id: str) -> Dict[str, Any]:
     """
     logger.info(f"Starting document processing pipeline for: {document_id}")
     
-    # Kick off chunking task
-    from corpus_service.tasks.chunking import process_document
-    chunking_result = process_document(document_id)
-    
-    if not chunking_result.get("success", False):
-        logger.error(f"Chunking failed for document: {document_id}")
+    try:
+        # Update document status
+        update_document_status(document_id, "processing")
+        
+        # Kick off chunking task asynchronously
+        from corpus_service.tasks.chunking import process_document
+        process_document.delay(document_id)
+        
         return {
-            "success": False,
-            "error": chunking_result.get("error", "Chunking task failed"),
-            "document_id": document_id,
+            "status": "success", 
+            "message": "Document processing started",
+            "document_id": document_id
         }
-    
-    # Here we would kick off the embedding task
-    # This would typically be handled by a separate service
-    # For now, we'll just log the completion
-    logger.info(f"Chunking completed for document: {document_id}")
-    
-    return {
-        "success": True,
-        "document_id": document_id,
-        "message": "Document processing pipeline started",
-    }
+    except Exception as e:
+        error_message = str(e)
+        logger.error(f"Error starting document processing: {error_message}", exc_info=True)
+        update_document_status(document_id, "processing_failed", error_message)
+        return {
+            "status": "error",
+            "message": error_message,
+            "document_id": document_id
+        }
 
 
 @app.task(name="corpus_service.tasks.processing.retry_failed_tasks")
@@ -263,18 +264,77 @@ def cleanup_old_tasks(days: int = 30) -> Dict[str, Any]:
 
 
 def update_document_status(document_id, status, error_message=None):
-    """Update document processing status.
+    """
+    Update the processing status of a document.
     
     Args:
         document_id: ID of the document
-        status: New status
+        status: Status to set
         error_message: Optional error message
+    """
+    # Create database session
+    db = SessionLocal()
+    
+    try:
+        # Update processing status
+        process_type = "processing"
+        
+        # Get processing status
+        processing_status = db.query(ProcessingStatus).filter(
+            ProcessingStatus.document_id == document_id,
+            ProcessingStatus.process_type == process_type,
+        ).first()
+        
+        if processing_status:
+            # Update status
+            processing_status.status = status
+            processing_status.error_message = error_message
+        else:
+            # Create new status
+            processing_status = ProcessingStatus(
+                document_id=document_id,
+                process_type=process_type,
+                status=status,
+                error_message=error_message,
+            )
+            db.add(processing_status)
+        
+        # Commit changes
+        db.commit()
+    except Exception as e:
+        logger.error(f"Error updating document status: {str(e)}", exc_info=True)
+    finally:
+        db.close()
+
+
+def chunk_document(document_id):
+    """
+    Chunk a document into smaller segments.
+    
+    This is a wrapper around the chunking task's process_document function
+    for backward compatibility with tests.
+    
+    Args:
+        document_id: ID of the document
         
     Returns:
-        Success status
+        Dict with chunking results
     """
-    logger.info(f"Updating document {document_id} status to {status}")
+    logger.info(f"Chunking document: {document_id}")
     
-    # This would update the database in production
-    # For testing, we just return a success response
-    return True 
+    # Update status
+    update_document_status(document_id, "processing")
+    
+    try:
+        # Call the actual chunking task
+        from corpus_service.tasks.chunking import process_document
+        result = process_document.delay(document_id)
+        
+        # Update status
+        update_document_status(document_id, "completed")
+        
+        return {"status": "success", "message": "Document chunking completed"}
+    except Exception as e:
+        logger.error(f"Error chunking document: {str(e)}", exc_info=True)
+        update_document_status(document_id, "failed", str(e))
+        return {"status": "error", "message": str(e)} 

@@ -15,7 +15,7 @@ import numpy as np
 from common.database import SessionLocal
 from common.logging import get_logger
 from common.models import Document, Chunk, Embedding, ProcessingStatus
-from embedding_service.models import get_embedding_model
+from embedding_service.models import EmbeddingModel, get_embedding_model
 
 # Initialize logger
 logger = get_logger(__name__)
@@ -312,4 +312,79 @@ def cache_embedding(db: Session, cache_key: str, embedding: List[float]) -> bool
     except Exception as e:
         logger.error(f"Error caching embedding: {str(e)}", exc_info=True)
         db.rollback()
-        return False 
+        return False
+
+
+def get_embedding(text: str, model_name: str = "text-embedding-ada-002") -> np.ndarray:
+    """Get embedding vector for a text using specified model.
+    
+    Args:
+        text: Text to embed
+        model_name: Name of the embedding model to use
+        
+    Returns:
+        Embedding vector as numpy array
+    """
+    try:
+        model = get_embedding_model(model_name)
+        vector = model.embed(text)
+        return np.array(vector)
+    except Exception as e:
+        logger.error(f"Error getting embedding: {str(e)}")
+        return np.zeros(get_embedding_model(model_name).dimensions)
+
+
+def generate_embeddings(document_id: str, model_name: str = "text-embedding-ada-002") -> Dict[str, Any]:
+    """Generate embeddings for all chunks in a document.
+    
+    Args:
+        document_id: ID of the document to process
+        model_name: Name of the embedding model to use
+        
+    Returns:
+        Dictionary with generation results
+    """
+    try:
+        # Get document chunks
+        chunks = get_chunks(document_id)
+        
+        if not chunks:
+            return {
+                "status": "error",
+                "error": "No chunks found",
+                "document_id": document_id
+            }
+        
+        # Get embedding model
+        model = get_embedding_model(model_name)
+        
+        # Generate embeddings for each chunk
+        embeddings = []
+        for chunk in chunks:
+            vector = model.embed(chunk["text"])
+            embeddings.append({
+                "chunk_id": chunk["id"],
+                "vector": vector,
+                "position": chunk["position"]
+            })
+        
+        # Save embeddings
+        save_embeddings(document_id, embeddings, model_name)
+        
+        # Update document status
+        update_document_status(document_id, "embeddings_generated")
+        
+        return {
+            "status": "success",
+            "document_id": document_id,
+            "model": model_name,
+            "chunks_processed": len(chunks)
+        }
+    except Exception as e:
+        logger.error(f"Error generating embeddings: {str(e)}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "document_id": document_id
+        }
+

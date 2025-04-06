@@ -10,10 +10,10 @@ ENV PYTHONUNBUFFERED=1 \
     POETRY_HOME="/opt/poetry" \
     POETRY_VIRTUALENVS_IN_PROJECT=true \
     POETRY_NO_INTERACTION=1 \
-    PYSETUP_PATH="/opt/pysetup" \
-    VENV_PATH="/opt/pysetup/.venv"
+    PYSETUP_PATH="/opt/pysetup"
 
-ENV PATH="$POETRY_HOME/bin:/app/.venv/bin:$PATH"
+ENV PATH="/app/.venv/bin:$POETRY_HOME/bin:$PATH"
+
 
 # Install poetry
 RUN apt-get update \
@@ -29,16 +29,15 @@ WORKDIR /app
 # Copy dependency files from the root directory
 COPY ../pyproject.toml ../poetry.lock ./
 
-# Install project dependencies
-# Use --no-root to avoid installing the project itself, only dependencies
-# You might exclude dev dependencies here if they are not needed for the worker
-# RUN poetry install --no-root --only main
-# However, keeping them consistent with api_gateway might be simpler for now
-RUN poetry install --no-root
+# Install project dependencies with verbose output
+RUN poetry install --no-root -vvv
+
+# Download necessary NLTK data during build
+RUN python -m nltk.downloader punkt stopwords
 
 # Copy the application code
-# Copy the corpus_service code
-COPY . /app/corpus_service
+# Create the corpus_service directory structure correctly for imports
+COPY . /app
 # Copy the common module (adjust path if it's located elsewhere)
 COPY ../common /app/common
 
@@ -47,4 +46,4 @@ ENV PYTHONPATH=/app
 
 # Define the command to run the Celery worker
 # Use the same command as in docker-compose.yml
-CMD ["celery", "-A", "corpus_service.worker", "worker", "--loglevel=info"]
+CMD ["poetry", "run", "python", "-m", "celery", "-A", "corpus_service.worker", "worker", "--loglevel=info"]

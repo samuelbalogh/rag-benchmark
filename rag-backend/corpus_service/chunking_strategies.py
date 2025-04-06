@@ -7,15 +7,16 @@ import nltk
 from nltk.tokenize import sent_tokenize, TextTilingTokenizer
 from sklearn.cluster import AgglomerativeClustering
 
-try:
-    nltk.data.find('tokenizers/punkt')
-except LookupError:
-    nltk.download('punkt')
-
-try:
-    nltk.data.find('tokenizers/texttiling')
-except LookupError:
-    nltk.download('stopwords')
+# Ensure NLTK data is downloaded during build (see Dockerfile)
+# try:
+#     nltk.data.find('tokenizers/punkt')
+# except LookupError:
+#     nltk.download('punkt')
+# 
+# try:
+#     nltk.data.find('corpora/stopwords') # Correct path for stopwords
+# except LookupError:
+#     nltk.download('stopwords')
 
 
 class ChunkingStrategy(ABC):
